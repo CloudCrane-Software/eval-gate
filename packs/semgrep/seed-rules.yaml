@@ -1,0 +1,72 @@
+# PROP-0011 security-scan-pack —— 示例种子规则（5 条，最小种子）
+#
+# 规则 ID 规范：eval-gate.<归因标签 slug>.<规则 slug>
+# 生长过程（badcase 归因标签树 → 规则 → 准入）见 packs/README.md。
+# 这些种子仅覆盖最高频三类（密钥泄漏 / 危险调用 / 越权与注入）的最小形态，
+# 不得视为覆盖声明；更多规则必须从 badcase 累计证据中生长，不走拍脑袋加规则。
+rules:
+  # ── 密钥泄漏（归因标签：security/secret-leak） ──────────────────────────
+  - id: eval-gate.security.hardcoded-credential
+    languages: [python]
+    severity: ERROR
+    message: >
+      疑似硬编码凭据：凭据值必须走 OpenBao/Credential Broker 短时兑换
+      （PROP-0001 §7），不得进入代码。命中的变更判 BLOCKED。
+    patterns:
+      - pattern: $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)^(password|passwd|pwd|secret|token|api_?key|access_?key|private_?key)$
+
+  # ── 危险调用（归因标签：security/dangerous-call） ────────────────────────
+  - id: eval-gate.security.dynamic-execution
+    languages: [python]
+    severity: ERROR
+    message: >
+      动态执行（eval/exec/os.system）：Agent 产出代码里禁止把不可信字符串
+      送进解释器或 shell；确需执行的走白名单命令表。种子规则，先抓显式调用。
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+          - pattern: os.system($X)
+
+  - id: eval-gate.security.subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >
+      subprocess 开 shell=True：命令注入面。默认禁止；如业务确需，
+      由 L1 规则表按资源白名单显式豁免并留痕。
+    patterns:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  # ── 注入模式（归因标签：security/injection） ─────────────────────────────
+  - id: eval-gate.security.sql-fstring-injection
+    languages: [python]
+    severity: ERROR
+    message: >
+      SQL 用 f-string/+.format 拼接：注入风险。一律参数化查询。
+      种子规则抓最显式的两种拼接形态。
+    patterns:
+      - pattern-either:
+          - pattern: $CURSOR.execute(f"...{$X}...")
+          - pattern: $CURSOR.execute("...".format(...))
+
+  # ── 越权模式（归因标签：security/unauthorized-access，taint 最小种子） ────
+  - id: eval-gate.security.path-traversal-from-request
+    mode: taint
+    languages: [python]
+    severity: WARNING
+    message: >
+      请求参数直接流入文件打开：路径穿越/越权访问（研发手册原则三：
+      不直接相信模型/请求提供的资源标识，须经资源目录解析）。最小种子，
+      后续按 badcase 归因扩展 sink（subprocess/模板/下载器）。
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.args.get(...)
+          - pattern: request.args.get(...)
+          - pattern: request.json[...]
+    pattern-sinks:
+      - pattern: open($PATH, ...)
+    pattern-sanitizers:
+      - pattern: os.path.basename(...)
