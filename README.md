@@ -25,7 +25,7 @@
 | 检查器本体 | **不做**。第三方扫描器只经 `subprocess` 调用其 CLI，本包 import 零第三方依赖；工具链由 CI 环境的 env YAML 保证装齐（§12.2） |
 | 决策层 Score | **只留注入点**（`score_fn: Callable[[Candidate], float]` + 灰区阈值）；本体在 jiuwen-glue 侧（WO-0010） |
 | 大模型调用 | **不内置**。深分析的 `deep_analyzer` / 深扫的 `llm_review` 都是注入接口；模型流量一律经 Higress 唯一入口（§4.9 #7） |
-| oracle-suite 记录器 | **不在本仓**（PROP-0006 后续工单）；本仓只留 L2 的 Case / diff / runner / 报告形状接口，记录器后续按 `OracleReport` 形状喂入 |
+| oracle-suite 记录器 | **已在本仓**（`src/oracle_suite/`，PROP-0006 M2 起步）：`InteractionRecorder` 记录 LLM 交互并在入库前强制脱敏、`DiffMatrix` 配对 diff、`consistency` 不变式检查；它与 L2 的关系一句话——记录器把真实交互按 `interaction_schema=v1` 规范录制，经配对/diff 喂给 `eval_gate.oracle` 的 Case/diff/`OracleReport` 形状做差分（Eval 资产只落 eval-assets 私有仓，本包不发真实网络请求） |
 | Langfuse | 只查询展示，不当中间层（§4.9 #6）；badcase 的 evidence 只存 trace **引用** |
 | EvalScope | 只做模型级基准（L1），不替代本门禁 |
 | CI workflow | 本仓**不写 GitHub Actions**；CI 由 CNB 流水线统一覆盖（后续工单） |
@@ -41,6 +41,10 @@ src/eval_gate/
 ├── scan.py      # 扫描三档：TIERS + 每工具一个 runner（subprocess 调 CLI）
 ├── badcase.py   # 数据契约：BadCaseCandidate + to_json_schema()
 └── cli.py       # python -m eval_gate scan <tier> <dir>
+src/oracle_suite/          # PROP-0006 M2 起步（oracle 配套记录器，阿里体系为 oracle）
+├── recorder.py    # InteractionRecorder：LLM 交互规范记录（interaction_schema=v1）+ 入库前强制脱敏
+├── matrix.py      # DiffMatrix：两批次按 case_id 配对 diff（复用 eval_gate.oracle 的差异形状），差异矩阵月更雏形
+└── consistency.py # 交互记录不变式检查，违规产出 badcase 候选（对齐 BadCaseCandidate）
 packs/
 ├── README.md            # 规则生长过程 + 归因标签树 schema（PROP-0011）
 └── semgrep/seed-rules.yaml  # 5 条示例种子（密钥泄漏/危险调用/注入/越权最小种子）
@@ -97,10 +101,11 @@ verdict = aggregate(run_tier("light", "path/to/repo"))
 
 ## 当前状态（如实）
 
-- ✅ M0 骨架 → **WO-0004（M2 前置）已交付**：上述五模块 + 三档 runner + PROP-0011 规则库骨架 + badcase 契约 + `ci/run-tier.sh` + pytest 74 用例全绿（subprocess 全 mock，本机不装真工具）。
+- ✅ M0 骨架 → **WO-0004（M2 前置）已交付**：上述五模块 + 三档 runner + PROP-0011 规则库骨架 + badcase 契约 + `ci/run-tier.sh` + pytest 全绿（subprocess 全 mock，本机不装真工具）。
+- ✅ **PROP-0006 M2 起步已交付**（bc50654）：`src/oracle_suite/` 交互记录器（含强制脱敏）+ 差异矩阵 + 语义一致性骨架，与 `eval_gate.oracle` / `eval_gate.badcase` 形状对齐；pytest **108 用例全绿**。
 - ⚠️ **未在真实扫描器上验证**：本机未安装 ruff/gitleaks/semgrep 等（按工单要求不真装）；各 runner 的退出码语义按各工具公开文档实现，待 CI 环境（env YAML 装齐工具链）首跑核对。`packs/semgrep/seed-rules.yaml` 只做了 YAML 语法校验（pyyaml），**未经 semgrep 引擎实测**。
 - ⚠️ 冒烟记录：`run-tier.sh static` 在本机全部判 UNKNOWN（工具缺失，fail-closed 符合设计）；本机恰好存在 npx，eslint 档曾实际启动并因 npx 缺包退出码 1 被判 BLOCKED——npx 介导的"缺包退出 1"与"lint 问题退出 1"不可区分，CI 环境装齐工具链后方可消除该歧义。
-- ⏳ 后续工单：CNB 流水线接入、决策层 Score 本体（WO-0010）、oracle-suite 记录器（PROP-0006）、规则库从 badcase 实际生长。
+- ⏳ 后续工单：CNB 流水线接入、决策层 Score 本体（WO-0010）、oracle-suite M2 后续（真实录制接入与月更机制落地）、规则库从 badcase 实际生长。
 
 ## License
 
