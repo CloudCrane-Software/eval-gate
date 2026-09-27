@@ -29,6 +29,7 @@
 | Langfuse | 只查询展示，不当中间层（§4.9 #6）；badcase 的 evidence 只存 trace **引用** |
 | EvalScope | 只做模型级基准（L1），不替代本门禁 |
 | CI workflow | 本仓**不写 GitHub Actions**；CI 由 CNB 流水线统一覆盖（后续工单） |
+| 聚合实现（偏差登记 2026-09-28 D4-R1） | 本仓 `gate.aggregate` 是与 glue `guardrail.aggregate` **语义一致的第二份聚合实现**（协议聚合薄层；对 v2.1 §3「全体系唯一 GuardrailRun」构成已登记偏差）：三态 fail-closed 同构（空集/UNKNOWN/BLOCKED 同判），不产生第二套裁决语义；两实现一致性由 `tests/test_consistency.py` 回归。统一为单一实现属跨仓依赖取舍，归 W-02 收口轮 + ADR 裁决，不在偏差登记前擅自合并 |
 | 规则库 | 扫描规则从 badcase 归因标签树生长（PROP-0011），新规则本身要过本门禁 L1 准入，见 `packs/README.md` |
 
 ## 模块地图
